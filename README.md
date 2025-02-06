@@ -112,8 +112,7 @@ Blender-Transform-Data-Sender-Plugin/
 ├── blender_plugin/            # Blender plugin files
 │   └── plugin.py              # Plugin that sends data to the server
 │
-├── flask_server/              # Files for the web server
-│   └── server.py              # Web server that stores data
+├── app.py/              # Web server that stores data
 │
 ├── inventory_ui/              # User interface for managing inventory
 │   └── ui.py                  # Code for the inventory UI
