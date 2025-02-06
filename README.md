@@ -39,7 +39,7 @@ The **PyQt5 UI** provides a graphical interface for managing inventory items. Yo
 - **Python**: Python 3.x installed on your computer.
 - **Blender**: Version 2.8 or higher.
 - **SQLite**: A lightweight database that will be used to store inventory data.
-
+- **Git** :git is used for version control
 ---
 
 ## 🔧 Setup Instructions
@@ -48,24 +48,19 @@ The **PyQt5 UI** provides a graphical interface for managing inventory items. Yo
 
 First, download the project to your computer by cloning the GitHub repository:
 
-```bash
+
 git clone https://github.com/kshareefbasha/Blender-Transform-Data-Sender-Plugin.git
 cd Blender-Transform-Data-Sender-Plugin
 2. Install Dependencies
 Make sure you have Python installed. Then, install the necessary libraries that the project uses:
 
-bash
-Copy
-Edit
+
 pip install -r requirements.txt
 This will install libraries like Flask, SQLite, and PyQt5 needed to run the project.
 
 3. Run the Flask Server
 The Flask server listens for data from Blender. To start the server, run this command:
 
-bash
-Copy
-Edit
 python flask_server/server.py
 The server will run locally and listen on a specified port (usually http://127.0.0.1:5000). It will process requests from Blender and store the data in the database.
 
@@ -90,9 +85,6 @@ To interact with the inventory, you need to run the Inventory UI.
 To Run the Inventory UI:
 Navigate to the inventory_ui folder.
 Run the following command:
-bash
-Copy
-Edit
 python inventory_ui/ui.py
 What You Can Do in the UI:
 View Inventory: The UI will show a list of all inventory items stored in the database.
@@ -101,25 +93,25 @@ Update Existing Items: Modify existing items in the database.
 Output
 Inventory Items: You will see a list of all inventory items along with their details.
 Any changes (adding or updating inventory items) will be reflected in the database immediately.
+
+
 📂 Project Folder Structure
 Here’s a breakdown of the files and folders in this project:
 
-bash
-Copy
-Edit
 Blender-Transform-Data-Sender-Plugin/
 │
 ├── blender_plugin/            # Blender plugin files
-│   └── plugin.py              # Plugin code that sends data to the server
+│   └── plugin.py              # Plugin that sends data to the server
 │
-├── flask_server/              # Flask server files
-│   └── server.py              # Code that listens for incoming data and handles requests
+├── flask_server/              # Files for the web server
+│   └── server.py              # Web server that stores data
 │
-├── inventory_ui/              # PyQt5 User Interface files
-│   └── ui.py                  # Code for the inventory management UI
+├── inventory_ui/              # User interface for managing inventory
+│   └── ui.py                  # Code for the inventory UI
 │
-├── requirements.txt           # Lists all Python libraries needed to run the project
-└── README.md                  # This file
+├── requirements.txt           # List of libraries used in the project
+└── README.md                  # This file (you’re reading it!)
+
 🛠️ Technologies Used
 Blender API (Python): Used to interact with Blender and manipulate 3D objects.
 Flask: A Python web framework that allows the server to communicate with Blender and manage inventory.
