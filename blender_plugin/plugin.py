@@ -1,97 +1,145 @@
 bl_info = {
-    "name": "Custom Transform Panel",
-    "blender": (2, 90, 0),
+    "name": "Transform Data Sender",
+    "blender": (2, 80, 0),
     "category": "Object",
 }
 
 import bpy
 import requests
+import os
 
-# PropertyGroup for selecting the server function (transform, translation, rotation, scale)
-class TransformServerSelection(bpy.types.PropertyGroup):
-    endpoint: bpy.props.EnumProperty(
-        name="Server Function",
-        items=[("translation", "Translation", "Send position data to the server"),
-               ("rotation", "Rotation", "Send rotation data to the server"),
-               ("scale", "Scale", "Send scale data to the server"),
-               ("transform", "Transform", "Send all transform data to the server")],
-        default="translation"
-    )
-
-# Operator to send transform data (position, rotation, or scale) to the Flask server
-class MYOBJECT_OT_send_position(bpy.types.Operator):
-    bl_idname = "object.send_position"
-    bl_label = "Send Position"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        obj = context.object
-        transform_type = context.scene.transform_server.endpoint  # Get selected server function
-
-        if transform_type == "translation":
-            data = {"x": obj.location.x, "y": obj.location.y, "z": obj.location.z}
-            endpoint = "/translation"
-        elif transform_type == "rotation":
-            data = {"x": obj.rotation_euler.x, "y": obj.rotation_euler.y, "z": obj.rotation_euler.z}
-            endpoint = "/rotation"
-        elif transform_type == "scale":
-            data = {"x": obj.scale.x, "y": obj.scale.y, "z": obj.scale.z}
-            endpoint = "/scale"
-        else:  # default to /transform
-            data = {
-                "location": {"x": obj.location.x, "y": obj.location.y, "z": obj.location.z},
-                "rotation": {"x": obj.rotation_euler.x, "y": obj.rotation_euler.y, "z": obj.rotation_euler.z},
-                "scale": {"x": obj.scale.x, "y": obj.scale.y, "z": obj.scale.z},
-            }
-            endpoint = "/transform"
-
-        try:
-            # Send POST request to Flask server with the selected data
-            response = requests.post(f"http://localhost:5000{endpoint}", json=data)
-            if response.status_code == 200:
-                self.report({'INFO'}, f"{transform_type.capitalize()} sent successfully")
-            else:
-                self.report({'ERROR'}, f"Failed to send {transform_type}")
-        except Exception as e:
-            self.report({'ERROR'}, f"Error: {e}")
-        return {'FINISHED'}
-
-# Panel for displaying the object transform controls and sending data
-class MYOBJECT_PT_transform(bpy.types.Panel):
-    bl_label = "Custom Transformation Panel"
-    bl_idname = "MYOBJECT_PT_transform"
+# Custom Panel to Select Object and Transformation Type
+class OBJECT_PT_custom_transform(bpy.types.Panel):
+    bl_label = "Transform"
+    bl_idname = "OBJECT_PT_custom_transform"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'Transform'
 
     def draw(self, context):
         layout = self.layout
-        obj = context.object
+        scene = context.scene
 
-        # Display object name and transformation controls
-        layout.label(text="Object Name: {}".format(obj.name))
-        layout.prop(obj, "location")
-        layout.prop(obj, "rotation_euler")
-        layout.prop(obj, "scale")
+        layout.prop(scene, "selected_object")
+        
+        if scene.selected_object:
+            obj = bpy.data.objects.get(scene.selected_object)
+            if obj:
+                layout.label(text="Modify Transformations:")
+                
+                # Dropdown to select transformation type
+                layout.prop(scene, "transform_type", text="Transformation Type")
+                
+                # Show transformation values based on the selected transformation type
+                if scene.transform_type == "transform":
+                    layout.label(text="Location: X={:.2f}, Y={:.2f}, Z={:.2f}".format(obj.location.x, obj.location.y, obj.location.z))
+                    layout.label(text="Rotation: X={:.2f}, Y={:.2f}, Z={:.2f}".format(obj.rotation_euler.x, obj.rotation_euler.y, obj.rotation_euler.z))
+                    layout.label(text="Scale: X={:.2f}, Y={:.2f}, Z={:.2f}".format(obj.scale.x, obj.scale.y, obj.scale.z))
+                    layout.operator("object.submit_transform", text="Submit All Transforms")
+                elif scene.transform_type == "translation":
+                    layout.prop(obj, "location")
+                    layout.operator("object.submit_transform", text="Submit Translation")
+                elif scene.transform_type == "rotation":
+                    layout.prop(obj, "rotation_euler", text="Rotation")
+                    layout.operator("object.submit_transform", text="Submit Rotation")
+                elif scene.transform_type == "scale":
+                    layout.prop(obj, "scale")
+                    layout.operator("object.submit_transform", text="Submit Scale")
+                elif scene.transform_type == "file-path":
+                    layout.operator("object.submit_transform", text="Submit File Path")
 
-        # Dropdown to select the server function (transform, translation, rotation, scale)
-        layout.prop(context.scene, "transform_server")
+# Operator to Submit Transform Data
+class OBJECT_OT_submit_transform(bpy.types.Operator):
+    bl_idname = "object.submit_transform"
+    bl_label = "Submit Transform Data"
 
-        # Button to send the selected transformation data to the server
-        layout.operator("object.send_position", text="Send Transform Data")
+    def execute(self, context):
+        scene = context.scene
+        obj_name = scene.selected_object
+        obj = bpy.data.objects.get(obj_name)
 
-# Registration and Unregistration
+        # Get the file path of the current Blender file
+        file_path = bpy.data.filepath if bpy.data.is_saved else "Unsaved File"
+        
+        if scene.transform_type == "transform":
+            if obj:
+                data = {
+                    "object_name": obj.name,
+                    "file_path": file_path,
+                    "changes": {
+                        "location": {"x": obj.location.x, "y": obj.location.y, "z": obj.location.z},
+                        "rotation": {"x": obj.rotation_euler.x, "y": obj.rotation_euler.y, "z": obj.rotation_euler.z},
+                        "scale": {"x": obj.scale.x, "y": obj.scale.y, "z": obj.scale.z},
+                    }
+                }
+                url = "http://localhost:5000/transform"
+        elif scene.transform_type == "translation":
+            if obj:
+                data = {
+                    "object_name": obj.name,
+                    "translation": {"x": obj.location.x, "y": obj.location.y, "z": obj.location.z}
+                }
+                url = "http://localhost:5000/translation"
+        elif scene.transform_type == "rotation":
+            if obj:
+                data = {
+                    "object_name": obj.name,
+                    "rotation": {"x": obj.rotation_euler.x, "y": obj.rotation_euler.y, "z": obj.rotation_euler.z}
+                }
+                url = "http://localhost:5000/rotation"
+        elif scene.transform_type == "scale":
+            if obj:
+                data = {
+                    "object_name": obj.name,
+                    "scale": {"x": obj.scale.x, "y": obj.scale.y, "z": obj.scale.z}
+                }
+                url = "http://localhost:5000/scale"
+        elif scene.transform_type == "file-path":
+            data = {
+                "file_path": file_path
+            }
+            url = "http://localhost:5000/file-path"
+
+        # Send the data to the server
+        try:
+            response = requests.post(url, json=data)
+            self.report({'INFO'}, f"Response: {response.text}")
+        except Exception as e:
+            self.report({'ERROR'}, f"Error: {str(e)}")
+
+        return {'FINISHED'}
+
+# Update the object list when objects are added or removed
+def update_object_list(self, context):
+    items = [(obj.name, obj.name, "") for obj in bpy.data.objects]
+    return items
+
+# Register and Unregister Functions
 def register():
-    bpy.utils.register_class(TransformServerSelection)
-    bpy.utils.register_class(MYOBJECT_OT_send_position)
-    bpy.utils.register_class(MYOBJECT_PT_transform)
-    bpy.types.Scene.transform_server = bpy.props.PointerProperty(type=TransformServerSelection)
+    bpy.utils.register_class(OBJECT_PT_custom_transform)
+    bpy.utils.register_class(OBJECT_OT_submit_transform)
+    bpy.types.Scene.selected_object = bpy.props.EnumProperty(
+        name="Select Object",
+        description="Choose an object to modify",
+        items=update_object_list
+    )
+    bpy.types.Scene.transform_type = bpy.props.EnumProperty(
+        name="Transform Type",
+        description="Select the transformation to modify",
+        items=[
+            ('transform', 'All Transforms', ""),
+            ('translation', 'Position', ""),
+            ('rotation', 'Rotation', ""),
+            ('scale', 'Scale', ""),
+            ('file-path', 'File Path', "")
+        ]
+    )
 
 def unregister():
-    bpy.utils.unregister_class(TransformServerSelection)
-    bpy.utils.unregister_class(MYOBJECT_OT_send_position)
-    bpy.utils.unregister_class(MYOBJECT_PT_transform)
-    del bpy.types.Scene.transform_server
+    bpy.utils.unregister_class(OBJECT_PT_custom_transform)
+    bpy.utils.unregister_class(OBJECT_OT_submit_transform)
+    del bpy.types.Scene.selected_object
+    del bpy.types.Scene.transform_type
 
 if __name__ == "__main__":
     register()

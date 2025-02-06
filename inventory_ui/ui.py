@@ -1,126 +1,159 @@
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QLineEdit, QLabel
-from PyQt5.QtCore import QThread, pyqtSignal
-import requests
 import sys
+import sqlite3
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
+    QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QInputDialog
+)
 
-class Worker(QThread):
-    result_signal = pyqtSignal(list)  # Keep it as list
-
-    def run(self):
-        response = requests.get('http://localhost:5000/inventory')
-        try:
-            data = response.json()
-            if isinstance(data, list):
-                self.result_signal.emit(data)  # Emit the list of items
-            else:
-                print("Invalid response format: Expected a list")
-        except ValueError:
-            print("Error decoding JSON response from the server.")
-
-class InventoryUI(QWidget):
+class InventoryManagementApp(QWidget):
     def __init__(self):
         super().__init__()
+
         self.setWindowTitle("Inventory Management")
-        self.layout = QVBoxLayout()
+        self.setGeometry(100, 100, 600, 400)
 
-        # Create the fields for adding a new item
-        self.name_label = QLabel("Item Name:")
-        self.layout.addWidget(self.name_label)
-        self.name_input = QLineEdit()
-        self.layout.addWidget(self.name_input)
+        self.conn = sqlite3.connect("inventory.db")
+        self.cursor = self.conn.cursor()
+        self.create_table()
 
-        self.quantity_label = QLabel("Quantity:")
-        self.layout.addWidget(self.quantity_label)
-        self.quantity_input = QLineEdit()
-        self.layout.addWidget(self.quantity_input)
+        # Main Layout
+        main_layout = QVBoxLayout()
 
-        # Create a button to add the item
+        # Inventory Management Section (Buttons)
+        inventory_layout = QHBoxLayout()
         self.add_button = QPushButton("Add Item")
-        self.add_button.clicked.connect(self.add_item)
-        self.layout.addWidget(self.add_button)
+        self.remove_button = QPushButton("Remove Item")
+        self.update_button = QPushButton("Update Quantity")
+        self.purchase_button = QPushButton("Purchase")
+        self.return_button = QPushButton("Return")
 
-        # Create a button to return the item
-        self.return_button = QPushButton("Return Item")
-        self.return_button.clicked.connect(self.return_item)
-        self.layout.addWidget(self.return_button)
+        # Connect buttons to respective functions
+        self.add_button.clicked.connect(self.add_item_dialog)
+        self.remove_button.clicked.connect(self.remove_item_dialog)
+        self.update_button.clicked.connect(self.update_quantity_dialog)
+        self.purchase_button.clicked.connect(self.purchase_item_dialog)
+        self.return_button.clicked.connect(self.return_item_dialog)
 
-        # Create the refresh button
-        self.refresh_button = QPushButton("Refresh Inventory")
-        self.refresh_button.clicked.connect(self.fetch_inventory)
-        self.layout.addWidget(self.refresh_button)
+        inventory_layout.addWidget(self.add_button)
+        inventory_layout.addWidget(self.remove_button)
+        inventory_layout.addWidget(self.update_button)
+        inventory_layout.addWidget(self.purchase_button)
+        inventory_layout.addWidget(self.return_button)
+        main_layout.addLayout(inventory_layout)
 
-        # Create the table to display the inventory
-        self.table = QTableWidget()
-        self.layout.addWidget(self.table)
+        # Inventory Table
+        self.inventory_table = QTableWidget(0, 2)
+        self.inventory_table.setHorizontalHeaderLabels(["Item Name", "Quantity"])
+        self.inventory_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        main_layout.addWidget(self.inventory_table)
 
-        self.setLayout(self.layout)
-        self.fetch_inventory()
+        self.load_inventory()
+        self.setLayout(main_layout)
 
-    def fetch_inventory(self):
-        self.worker = Worker()
-        self.worker.result_signal.connect(self.update_table)
-        self.worker.start()
+    def create_table(self):
+        """Creates the inventory database table if it doesn't exist."""
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS inventory (
+                item_name TEXT PRIMARY KEY,
+                quantity INTEGER NOT NULL
+            )
+        """)
+        self.conn.commit()
 
-    def update_table(self, inventory_data):
-        if isinstance(inventory_data, list):  # Ensure data is a list
-            self.table.setRowCount(len(inventory_data))
-            self.table.setColumnCount(2)
-            self.table.setHorizontalHeaderLabels(['Item Name', 'Quantity'])
+    def load_inventory(self):
+        """Loads inventory items from the database into the table."""
+        self.inventory_table.setRowCount(0)
+        self.cursor.execute("SELECT * FROM inventory")
+        for row_position, (item_name, quantity) in enumerate(self.cursor.fetchall()):
+            self.inventory_table.insertRow(row_position)
+            self.inventory_table.setItem(row_position, 0, QTableWidgetItem(item_name))
+            self.inventory_table.setItem(row_position, 1, QTableWidgetItem(str(quantity)))
 
-            for row, item in enumerate(inventory_data):
-                # Make sure each item is a dictionary with 'name' and 'quantity'
-                if isinstance(item, dict) and 'name' in item and 'quantity' in item:
-                    self.table.setItem(row, 0, QTableWidgetItem(item['name']))
-                    self.table.setItem(row, 1, QTableWidgetItem(str(item['quantity'])))
-                else:
-                    print(f"Invalid item format: {item}")
+    def add_item(self, item_name, quantity):
+        """Adds a new item to the inventory."""
+        try:
+            self.cursor.execute("INSERT INTO inventory (item_name, quantity) VALUES (?, ?)", (item_name, quantity))
+            self.conn.commit()
+            self.load_inventory()
+        except sqlite3.IntegrityError:
+            self.show_error("Item already exists!")
+
+    def update_quantity(self, item_name, new_quantity):
+        """Updates the quantity of an existing inventory item."""
+        self.cursor.execute("UPDATE inventory SET quantity = ? WHERE item_name = ?", (new_quantity, item_name))
+        self.conn.commit()
+        self.load_inventory()
+
+    def remove_item(self, item_name):
+        """Removes an item from the inventory."""
+        self.cursor.execute("DELETE FROM inventory WHERE item_name = ?", (item_name,))
+        self.conn.commit()
+        self.load_inventory()
+
+    def purchase_item(self, item_name, purchase_quantity):
+        """Handles item purchases by reducing stock quantity."""
+        self.cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        result = self.cursor.fetchone()
+        if result and result[0] >= purchase_quantity:
+            new_quantity = result[0] - purchase_quantity
+            self.update_quantity(item_name, new_quantity)
         else:
-            print("Invalid data format received:", inventory_data)
+            self.show_error("Insufficient stock or item not found!")
 
-    def add_item(self):
-        name = self.name_input.text()
-        quantity = self.quantity_input.text()
-
-        # Validate the input
-        if name and quantity.isdigit():
-            quantity = int(quantity)
-            # Send the new item data to the server
-            response = requests.post('http://localhost:5000/add_item', json={'name': name, 'quantity': quantity})
-
-            if response.status_code == 201:
-                print("Item added successfully!")
-                self.fetch_inventory()  # Refresh the inventory table
-                self.name_input.clear()
-                self.quantity_input.clear()
-            else:
-                print("Failed to add item.")
+    def return_item(self, item_name, return_quantity):
+        """Handles item returns by increasing stock quantity."""
+        self.cursor.execute("SELECT quantity FROM inventory WHERE item_name = ?", (item_name,))
+        result = self.cursor.fetchone()
+        if result:
+            new_quantity = result[0] + return_quantity
+            self.update_quantity(item_name, new_quantity)
         else:
-            print("Invalid input!")
+            self.add_item(item_name, return_quantity)
 
-    def return_item(self):
-        name = self.name_input.text()
-        quantity = self.quantity_input.text()
+    def show_error(self, message):
+        """Displays an error message box."""
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText(message)
+        msg.setWindowTitle("Error")
+        msg.exec_()
 
-        # Validate the input for returning item
-        if name and quantity.isdigit():
-            quantity = int(quantity)
+    # Dialogs for user input
+    def add_item_dialog(self):
+        item_name, ok1 = QInputDialog.getText(self, "Add Item", "Enter item name:")
+        if ok1 and item_name:
+            quantity, ok2 = QInputDialog.getInt(self, "Add Item", "Enter quantity:", 1, 1, 1000)
+            if ok2:
+                self.add_item(item_name, quantity)
 
-            # Send a request to update the quantity or remove the item
-            # Assuming we're reducing the item quantity here
-            response = requests.post('http://localhost:5000/update-quantity', json={'name': name, 'quantity': -quantity})
+    def remove_item_dialog(self):
+        item_name, ok = QInputDialog.getText(self, "Remove Item", "Enter item name to remove:")
+        if ok and item_name:
+            self.remove_item(item_name)
 
-            if response.status_code == 200:
-                print("Item returned successfully!")
-                self.fetch_inventory()  # Refresh the inventory table
-                self.name_input.clear()
-                self.quantity_input.clear()
-            else:
-                print("Failed to return item.")
-        else:
-            print("Invalid input!")
+    def update_quantity_dialog(self):
+        item_name, ok1 = QInputDialog.getText(self, "Update Quantity", "Enter item name:")
+        if ok1 and item_name:
+            quantity, ok2 = QInputDialog.getInt(self, "Update Quantity", "Enter new quantity:", 1, 1, 1000)
+            if ok2:
+                self.update_quantity(item_name, quantity)
 
-if __name__ == '__main__':
+    def purchase_item_dialog(self):
+        item_name, ok1 = QInputDialog.getText(self, "Purchase Item", "Enter item name:")
+        if ok1 and item_name:
+            quantity, ok2 = QInputDialog.getInt(self, "Purchase Item", "Enter purchase quantity:", 1, 1, 1000)
+            if ok2:
+                self.purchase_item(item_name, quantity)
+
+    def return_item_dialog(self):
+        item_name, ok1 = QInputDialog.getText(self, "Return Item", "Enter item name:")
+        if ok1 and item_name:
+            quantity, ok2 = QInputDialog.getInt(self, "Return Item", "Enter return quantity:", 1, 1, 1000)
+            if ok2:
+                self.return_item(item_name, quantity)
+
+if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = InventoryUI()
+    window = InventoryManagementApp()
     window.show()
     sys.exit(app.exec_())
